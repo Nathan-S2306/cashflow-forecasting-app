@@ -234,13 +234,13 @@ with tab_guide:
     """)
 
 # =====================================================================
-# TAB 3: IN-APP FEEDBACK FORM (WEB3FORMS - WITH HEADERS FIX)
+# TAB 3: IN-APP FEEDBACK FORM (FORMSPREE BACKEND)
 # =====================================================================
 with tab_feedback:
     st.header("💬 Help Shape the Next Version")
     st.write("Your feedback helps refine the cashflow engine. Takes under 90 seconds!")
 
-    WEB3FORMS_ACCESS_KEY = "52edad98-8b2a-4670-b77d-fb02ac367342"
+    FORMSPREE_ENDPOINT = "https://formspree.io/f/xdendkdd"
 
     with st.form("feedback_form", clear_on_submit=True):
         ease_of_use = st.select_slider(
@@ -280,9 +280,6 @@ with tab_feedback:
 
         if submit_button:
             payload = {
-                "access_key": WEB3FORMS_ACCESS_KEY,
-                "subject": f"Cashflow App Feedback - Rating: {ease_of_use}",
-                "from_name": "Cashflow Streamlit App",
                 "Ease of Use": ease_of_use,
                 "Tested What-If Scenario": tested_scenario,
                 "Forward Visibility vs Bank": forward_visibility,
@@ -292,24 +289,16 @@ with tab_feedback:
                 "Tester Email": email if email else "Anonymous"
             }
             
-            headers = {
-                "Accept": "application/json"
-            }
-            
             try:
-                # Using form-encoded POST request with explicit Accept headers for maximum Web3Forms compatibility
                 response = requests.post(
-                    "https://api.web3forms.com/submit", 
-                    data=payload, 
-                    headers=headers
+                    FORMSPREE_ENDPOINT, 
+                    json=payload,
+                    headers={"Accept": "application/json"}
                 )
                 
-                res_data = response.json()
-                
-                if response.status_code == 200 and res_data.get("success"):
+                if response.status_code == 200:
                     st.success("🎉 Thank you! Your feedback has been submitted successfully.")
                 else:
-                    error_msg = res_data.get("message", "Unknown submission error")
-                    st.error(f"Failed to submit: {error_msg}")
+                    st.error(f"Failed to submit (Status: {response.status_code}). Please try again.")
             except Exception as e:
                 st.error(f"Error submitting form: {e}")
