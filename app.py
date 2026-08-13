@@ -54,107 +54,146 @@ with st.sidebar.expander("➕ Add Custom Rule"):
         })
         st.success(f"Added {rule_name}!")
 
-# --- CSV STATEMENT UPLOADER ---
-st.subheader("Import Historical Bank Statement (Optional)")
-uploaded_file = st.file_uploader("Upload bank statement (CSV with 'Date' and 'Amount' columns)", type=["csv"])
+# CREATE MAIN NAVIGATION TABS
+tab_dashboard, tab_guide = st.tabs(["📊 Forecast Dashboard", "📖 How to Use Guide"])
 
-daily_discretionary_spend = 0.0
+# =====================================================================
+# TAB 1: MAIN FORECAST DASHBOARD
+# =====================================================================
+with tab_dashboard:
+    # --- CSV STATEMENT UPLOADER ---
+    st.subheader("Import Historical Bank Statement (Optional)")
+    uploaded_file = st.file_uploader("Upload bank statement (CSV with 'Date' and 'Amount' columns)", type=["csv"])
 
-if uploaded_file is not None:
-    try:
-        csv_df = pd.read_csv(uploaded_file)
-        csv_df.columns = csv_df.columns.str.strip().str.capitalize()
-        
-        if 'Date' in csv_df.columns and 'Amount' in csv_df.columns:
-            csv_df['Date'] = pd.to_datetime(csv_df['Date'])
+    daily_discretionary_spend = 0.0
+
+    if uploaded_file is not None:
+        try:
+            csv_df = pd.read_csv(uploaded_file)
+            csv_df.columns = csv_df.columns.str.strip().str.capitalize()
             
-            debits = csv_df[csv_df['Amount'] < 0]
-            total_days = (csv_df['Date'].max() - csv_df['Date'].min()).days or 30
-            daily_discretionary_spend = abs(debits['Amount'].sum()) / total_days
-            
-            st.info(f"📊 Estimated daily variable spend: **£{daily_discretionary_spend:.2f}/day** based on {total_days} days of statement history.")
+            if 'Date' in csv_df.columns and 'Amount' in csv_df.columns:
+                csv_df['Date'] = pd.to_datetime(csv_df['Date'])
+                
+                debits = csv_df[csv_df['Amount'] < 0]
+                total_days = (csv_df['Date'].max() - csv_df['Date'].min()).days or 30
+                daily_discretionary_spend = abs(debits['Amount'].sum()) / total_days
+                
+                st.info(f"📊 Estimated daily variable spend: **£{daily_discretionary_spend:.2f}/day** based on {total_days} days of statement history.")
+            else:
+                st.warning("CSV must contain 'Date' and 'Amount' headers. Falling back to default rules.")
+        except Exception as e:
+            st.error(f"Error parsing CSV: {e}")
+
+    # --- FORECAST TIMELINE ENGINE ---
+    start_date = pd.Timestamp.today().normalize()
+    date_range = pd.date_range(start=start_date, periods=forecast_days, freq="D")
+
+    df = pd.DataFrame({'date': date_range})
+    df['income'] = 0.0
+    df['bills'] = 0.0
+    df['variable_spend'] = daily_discretionary_spend
+
+    # Apply recurring rules
+    for rule in st.session_state.rules:
+        mask = df['date'].dt.day == rule['day']
+        if rule['type'] == "Income":
+            df.loc[mask, 'income'] += rule['amount']
         else:
-            st.warning("CSV must contain 'Date' and 'Amount' headers. Falling back to default rules.")
-    except Exception as e:
-        st.error(f"Error parsing CSV: {e}")
+            df.loc[mask, 'bills'] += rule['amount']
 
-# --- FORECAST TIMELINE ENGINE ---
-start_date = pd.Timestamp.today().normalize()
-date_range = pd.date_range(start=start_date, periods=forecast_days, freq="D")
+    df['net_flow'] = df['income'] - df['bills'] - df['variable_spend']
+    df['Baseline Balance'] = start_balance + df['net_flow'].cumsum()
 
-df = pd.DataFrame({'date': date_range})
-df['income'] = 0.0
-df['bills'] = 0.0
-df['variable_spend'] = daily_discretionary_spend
+    # --- WHAT-IF SCENARIO SIMULATOR ---
+    st.markdown("---")
+    st.subheader("🧪 What-If Scenario Simulator")
 
-# Apply recurring rules
-for rule in st.session_state.rules:
-    mask = df['date'].dt.day == rule['day']
-    if rule['type'] == "Income":
-        df.loc[mask, 'income'] += rule['amount']
-    else:
-        df.loc[mask, 'bills'] += rule['amount']
+    enable_scenario = st.checkbox("Enable Scenario Testing Overlay")
 
-df['net_flow'] = df['income'] - df['bills'] - df['variable_spend']
-df['Baseline Balance'] = start_balance + df['net_flow'].cumsum()
-
-# --- WHAT-IF SCENARIO SIMULATOR ---
-st.markdown("---")
-st.subheader("🧪 What-If Scenario Simulator")
-
-enable_scenario = st.checkbox("Enable Scenario Testing Overlay")
-
-if enable_scenario:
-    col_sc1, col_sc2, col_sc3 = st.columns(3)
-    
-    scenario_event = col_sc1.text_input("Scenario Description", "Weekend Trip / Holiday")
-    scenario_amount = col_sc2.number_input("One-off Event Amount (£)", value=350.00, step=50.00)
-    scenario_day_offset = col_sc3.number_input("Occurs in (Days from today)", min_value=1, max_value=forecast_days, value=14)
-    
-    # Calculate scenario balance
-    df['Scenario Impact'] = 0.0
-    if scenario_day_offset <= len(df):
-        df.loc[scenario_day_offset - 1, 'Scenario Impact'] = -scenario_amount
+    if enable_scenario:
+        col_sc1, col_sc2, col_sc3 = st.columns(3)
         
-    df['Simulated Balance'] = start_balance + (df['net_flow'] + df['Scenario Impact']).cumsum()
-    
-    # Check scenario impact on safety buffer
-    sim_min = df['Simulated Balance'].min()
-    sim_min_date = df.loc[df['Simulated Balance'].idxmin(), 'date'].strftime('%d %b %Y')
-    
-    if sim_min < buffer_threshold:
-        st.error(f"🚨 **Scenario Alert:** Under '{scenario_event}', balance drops to **£{sim_min:,.2f}** on **{sim_min_date}**, breaching your £{buffer_threshold:,.2f} safety buffer!")
+        scenario_event = col_sc1.text_input("Scenario Description", "Weekend Trip / Holiday")
+        scenario_amount = col_sc2.number_input("One-off Event Amount (£)", value=350.00, step=50.00)
+        scenario_day_offset = col_sc3.number_input("Occurs in (Days from today)", min_value=1, max_value=forecast_days, value=14)
+        
+        # Calculate scenario balance
+        df['Scenario Impact'] = 0.0
+        if scenario_day_offset <= len(df):
+            df.loc[scenario_day_offset - 1, 'Scenario Impact'] = -scenario_amount
+            
+        df['Simulated Balance'] = start_balance + (df['net_flow'] + df['Scenario Impact']).cumsum()
+        
+        # Check scenario impact on safety buffer
+        sim_min = df['Simulated Balance'].min()
+        sim_min_date = df.loc[df['Simulated Balance'].idxmin(), 'date'].strftime('%d %b %Y')
+        
+        if sim_min < buffer_threshold:
+            st.error(f"🚨 **Scenario Alert:** Under '{scenario_event}', balance drops to **£{sim_min:,.2f}** on **{sim_min_date}**, breaching your £{buffer_threshold:,.2f} safety buffer!")
+        else:
+            st.success(f"✅ **Scenario Safe:** Lowest projected balance with '{scenario_event}' is **£{sim_min:,.2f}** on **{sim_min_date}**.")
+
+    # --- METRICS DISPLAY ---
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Starting Balance", f"£{start_balance:,.2f}")
+    baseline_min = df['Baseline Balance'].min()
+    col2.metric("Baseline Lowest Point", f"£{baseline_min:,.2f}")
+    col3.metric("Ending Balance", f"£{df['Baseline Balance'].iloc[-1]:,.2f}")
+
+    # --- CHART VISUALIZATION ---
+    st.subheader("Cashflow Projection Chart")
+
+    if enable_scenario:
+        st.line_chart(df.set_index('date')[['Baseline Balance', 'Simulated Balance']])
     else:
-        st.success(f"✅ **Scenario Safe:** Lowest projected balance with '{scenario_event}' is **£{sim_min:,.2f}** on **{sim_min_date}**.")
+        st.line_chart(df.set_index('date')[['Baseline Balance']])
 
-# --- METRICS DISPLAY ---
-col1, col2, col3 = st.columns(3)
-col1.metric("Starting Balance", f"£{start_balance:,.2f}")
-baseline_min = df['Baseline Balance'].min()
-col2.metric("Baseline Lowest Point", f"£{baseline_min:,.2f}")
-col3.metric("Ending Balance", f"£{df['Baseline Balance'].iloc[-1]:,.2f}")
+    # --- DATA BREAKDOWN TABLE ---
+    st.subheader("Detailed Projections")
+    display_cols = ['date', 'income', 'bills', 'variable_spend', 'Baseline Balance']
+    if enable_scenario:
+        display_cols.append('Simulated Balance')
 
-# --- CHART VISUALIZATION ---
-st.subheader("Cashflow Projection Chart")
+    st.dataframe(
+        df[display_cols].style.format({
+            'income': '£{:,.2f}',
+            'bills': '£{:,.2f}',
+            'variable_spend': '£{:,.2f}',
+            'Baseline Balance': '£{:,.2f}',
+            'Simulated Balance': '£{:,.2f}' if enable_scenario else '{}'
+        }),
+        use_container_width=True
+    )
 
-if enable_scenario:
-    st.line_chart(df.set_index('date')[['Baseline Balance', 'Simulated Balance']])
-else:
-    st.line_chart(df.set_index('date')[['Baseline Balance']])
-
-# --- DATA BREAKDOWN TABLE ---
-st.subheader("Detailed Projections")
-display_cols = ['date', 'income', 'bills', 'variable_spend', 'Baseline Balance']
-if enable_scenario:
-    display_cols.append('Simulated Balance')
-
-st.dataframe(
-    df[display_cols].style.format({
-        'income': '£{:,.2f}',
-        'bills': '£{:,.2f}',
-        'variable_spend': '£{:,.2f}',
-        'Baseline Balance': '£{:,.2f}',
-        'Simulated Balance': '£{:,.2f}' if enable_scenario else '{}'
-    }),
-    use_container_width=True
-)
+# =====================================================================
+# TAB 2: IN-APP "HOW TO USE" GUIDE
+# =====================================================================
+with tab_guide:
+    st.header("📖 How to Get the Best Out of Your Cashflow Engine")
+    
+    st.markdown("""
+    Most budgeting tools look **backward** to tell you what you already spent. This app looks **forward** to prevent overdraft surprises and show your true safe cushion.
+    
+    ---
+    
+    ### 🛠️ 1. Set Your Baseline Parameters
+    * **Starting Account Balance:** Enter your current real-time bank balance in the sidebar.
+    * **Forecast Horizon:** Set how far ahead you want to project (e.g., 90 days).
+    * **Minimum Safety Buffer:** Set a cushion amount (e.g., £500). If your projected balance ever drops below this, the engine triggers an automatic risk alert.
+    
+    ---
+    
+    ### 📅 2. Input Your Recurring Income & Bills
+    * Use **Sidebar > Add Custom Rule** to add your monthly commitments:
+        * **Payday / Salary:** Set the amount and the day of the month you get paid.
+        * **Fixed Bills:** Add Rent, Direct Debits, Subscriptions, and Utilities with their respective due dates.
+    * *(Optional)* Upload a recent CSV statement from your bank to automatically estimate your average daily variable spend (groceries, transport, dining out).
+    
+    ---
+    
+    ### 🧪 3. Test "What-If" Purchase Scenarios
+    * Thinking of making a large purchase (like booking a holiday or buying new tech)?
+    * Check **Enable Scenario Testing Overlay** on the dashboard.
+    * Enter the item cost and when you plan to buy it. The chart will plot a second line (**Simulated Balance**) over your baseline curve to show whether the purchase is safe or if it risks causing a low-cash warning.
+    """)
