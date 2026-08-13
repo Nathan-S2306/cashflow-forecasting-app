@@ -37,6 +37,7 @@ buffer_threshold = st.sidebar.number_input(
 # 2. RECURRING INCOME & BILLS CONFIGURATOR
 st.sidebar.header("2. Recurring Income & Bills")
 
+# Default demo rules initialization
 if 'rules' not in st.session_state:
     st.session_state.rules = [
         {"name": "Employer Payroll", "amount": 2400.00, "day": 25, "type": "Income"},
@@ -58,13 +59,29 @@ with st.sidebar.expander("➕ Add Custom Rule"):
             "day": rule_day,
             "type": rule_type
         })
-        st.success(f"Added {rule_name}!")
+        st.rerun()
 
-# Display current active rules in sidebar
+# --- ACTIVE RULES MANAGEMENT WITH INDIVIDUAL DELETE BUTTONS ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("Active Rules")
-for idx, r in enumerate(st.session_state.rules):
-    st.sidebar.caption(f"• **{r['name']}**: £{r['amount']:.2f} (Day {r['day']}) [{r['type']}]")
+col_title, col_clear = st.sidebar.columns([2, 1])
+col_title.subheader("Active Rules")
+
+if col_clear.button("Clear All"):
+    st.session_state.rules = []
+    st.rerun()
+
+if not st.session_state.rules:
+    st.sidebar.caption("No active rules set.")
+else:
+    for idx, r in enumerate(list(st.session_state.rules)):
+        col_text, col_del = st.sidebar.columns([4, 1])
+        prefix = "+" if r['type'] == "Income" else "-"
+        col_text.caption(f"• **{r['name']}**: {prefix}£{r['amount']:.2f} (Day {r['day']})")
+        
+        # Individual delete button with unique key per rule index
+        if col_del.button("❌", key=f"del_{idx}"):
+            st.session_state.rules.pop(idx)
+            st.rerun()
 
 # =====================================================================
 # MAIN TAB NAVIGATION
