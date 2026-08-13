@@ -4,9 +4,9 @@ import numpy as np
 import streamlit as st
 
 # Set Streamlit Page Configuration
-st.set_page_config(page_title="Cashflow Forecast Engine", layout="wide")
+st.set_page_config(page_title="Budget Forecasting Tool", layout="wide")
 
-st.title("💸 Daily Cashflow Forecast Engine")
+st.title("💸 Budget Forecasting Tool")
 
 # =====================================================================
 # SIDEBAR CONFIGURATION
