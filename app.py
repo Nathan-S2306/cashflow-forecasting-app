@@ -1,12 +1,18 @@
+import requests
 import pandas as pd
 import numpy as np
 import streamlit as st
 
+# Set Streamlit Page Configuration
 st.set_page_config(page_title="Cashflow Forecast Engine", layout="wide")
 
 st.title("💸 Daily Cashflow Forecast Engine")
 
-# --- SIDEBAR: CORE SETTINGS ---
+# =====================================================================
+# SIDEBAR CONFIGURATION
+# =====================================================================
+
+# 1. CORE SETTINGS
 st.sidebar.header("1. Core Settings")
 
 start_balance = st.sidebar.number_input(
@@ -28,7 +34,7 @@ buffer_threshold = st.sidebar.number_input(
     step=50.00
 )
 
-# --- SIDEBAR: RECURRING RULES CONFIGURATOR ---
+# 2. RECURRING INCOME & BILLS CONFIGURATOR
 st.sidebar.header("2. Recurring Income & Bills")
 
 if 'rules' not in st.session_state:
@@ -54,8 +60,20 @@ with st.sidebar.expander("➕ Add Custom Rule"):
         })
         st.success(f"Added {rule_name}!")
 
-# CREATE MAIN NAVIGATION TABS
-tab_dashboard, tab_guide = st.tabs(["📊 Forecast Dashboard", "📖 How to Use Guide"])
+# Display current active rules in sidebar
+st.sidebar.markdown("---")
+st.sidebar.subheader("Active Rules")
+for idx, r in enumerate(st.session_state.rules):
+    st.sidebar.caption(f"• **{r['name']}**: £{r['amount']:.2f} (Day {r['day']}) [{r['type']}]")
+
+# =====================================================================
+# MAIN TAB NAVIGATION
+# =====================================================================
+tab_dashboard, tab_guide, tab_feedback = st.tabs([
+    "📊 Forecast Dashboard", 
+    "📖 How to Use Guide", 
+    "💬 Leave Feedback"
+])
 
 # =====================================================================
 # TAB 1: MAIN FORECAST DASHBOARD
@@ -94,7 +112,7 @@ with tab_dashboard:
     df['bills'] = 0.0
     df['variable_spend'] = daily_discretionary_spend
 
-    # Apply recurring rules
+    # Apply recurring rules across the timeline
     for rule in st.session_state.rules:
         mask = df['date'].dt.day == rule['day']
         if rule['type'] == "Income":
@@ -118,14 +136,14 @@ with tab_dashboard:
         scenario_amount = col_sc2.number_input("One-off Event Amount (£)", value=350.00, step=50.00)
         scenario_day_offset = col_sc3.number_input("Occurs in (Days from today)", min_value=1, max_value=forecast_days, value=14)
         
-        # Calculate scenario balance
+        # Calculate scenario impact
         df['Scenario Impact'] = 0.0
         if scenario_day_offset <= len(df):
             df.loc[scenario_day_offset - 1, 'Scenario Impact'] = -scenario_amount
             
         df['Simulated Balance'] = start_balance + (df['net_flow'] + df['Scenario Impact']).cumsum()
         
-        # Check scenario impact on safety buffer
+        # Check buffer breach
         sim_min = df['Simulated Balance'].min()
         sim_min_date = df.loc[df['Simulated Balance'].idxmin(), 'date'].strftime('%d %b %Y')
         
@@ -134,14 +152,14 @@ with tab_dashboard:
         else:
             st.success(f"✅ **Scenario Safe:** Lowest projected balance with '{scenario_event}' is **£{sim_min:,.2f}** on **{sim_min_date}**.")
 
-    # --- METRICS DISPLAY ---
+    # --- SUMMARY METRICS ---
     col1, col2, col3 = st.columns(3)
     col1.metric("Starting Balance", f"£{start_balance:,.2f}")
     baseline_min = df['Baseline Balance'].min()
     col2.metric("Baseline Lowest Point", f"£{baseline_min:,.2f}")
     col3.metric("Ending Balance", f"£{df['Baseline Balance'].iloc[-1]:,.2f}")
 
-    # --- CHART VISUALIZATION ---
+    # --- VISUAL PROJECTION CHART ---
     st.subheader("Cashflow Projection Chart")
 
     if enable_scenario:
@@ -149,8 +167,8 @@ with tab_dashboard:
     else:
         st.line_chart(df.set_index('date')[['Baseline Balance']])
 
-    # --- DATA BREAKDOWN TABLE ---
-    st.subheader("Detailed Projections")
+    # --- DATA TABLE BREAKDOWN ---
+    st.subheader("Detailed Day-by-Day Projections")
     display_cols = ['date', 'income', 'bills', 'variable_spend', 'Baseline Balance']
     if enable_scenario:
         display_cols.append('Simulated Balance')
@@ -197,3 +215,70 @@ with tab_guide:
     * Check **Enable Scenario Testing Overlay** on the dashboard.
     * Enter the item cost and when you plan to buy it. The chart will plot a second line (**Simulated Balance**) over your baseline curve to show whether the purchase is safe or if it risks causing a low-cash warning.
     """)
+
+# =====================================================================
+# TAB 3: IN-APP FEEDBACK FORM (WEB3FORMS)
+# =====================================================================
+with tab_feedback:
+    st.header("💬 Help Shape the Next Version")
+    st.write("Your feedback helps refine the cashflow engine. Takes under 90 seconds!")
+
+    WEB3FORMS_ACCESS_KEY = "52edad98-8b2a-4670-b77d-fb02ac367342"
+
+    with st.form("feedback_form", clear_on_submit=True):
+        ease_of_use = st.select_slider(
+            "1. How easy was it to set up rules and navigate the app?",
+            options=["1 - Confusing", "2 - Hard", "3 - Okay", "4 - Easy", "5 - Very Easy"],
+            value="4 - Easy"
+        )
+        
+        tested_scenario = st.radio(
+            "2. Did you test the 'What-If' Scenario Simulator?",
+            ["Yes, and it was clear/useful", "Yes, but it was confusing", "No, I skipped it"]
+        )
+        
+        forward_visibility = st.radio(
+            "3. Does seeing your projected minimum balance point give better visibility than your banking app?",
+            ["Yes, much better forward visibility", "About the same", "No"]
+        )
+        
+        wtp = st.radio(
+            "4. If this auto-synced with your bank (via Open Banking), would you pay £3–£5/month?",
+            ["Definitely yes", "Maybe, depending on extra features", "No, I prefer free manual tools"]
+        )
+        
+        friction = st.text_area(
+            "5. What was the most frustrating part or biggest friction point?",
+            placeholder="e.g. Entering rules manually, CSV formatting, understanding the chart..."
+        )
+        
+        feature = st.text_input(
+            "6. What single feature should we build next?",
+            placeholder="e.g. PDF Export, Mobile App, Savings Goal Tracker..."
+        )
+        
+        email = st.text_input("Optional: Your Email (if you'd like updates)", placeholder="name@example.com")
+        
+        submit_button = st.form_submit_button("🚀 Submit Feedback")
+
+        if submit_button:
+            payload = {
+                "access_key": WEB3FORMS_ACCESS_KEY,
+                "subject": f"Cashflow App Feedback - Rating: {ease_of_use}",
+                "Ease of Use": ease_of_use,
+                "Tested What-If Scenario": tested_scenario,
+                "Forward Visibility vs Bank": forward_visibility,
+                "Willingness to Pay (£3-5/mo)": wtp,
+                "Main Friction Point": friction,
+                "Feature Request": feature,
+                "Tester Email": email if email else "Anonymous"
+            }
+            
+            try:
+                response = requests.post("https://api.web3forms.com/submit", json=payload)
+                if response.status_code == 200:
+                    st.success("🎉 Thank you! Your feedback has been sent directly to my inbox.")
+                else:
+                    st.error("Failed to submit feedback. Please check your internet connection or try again.")
+            except Exception as e:
+                st.error(f"Error submitting form: {e}")
