@@ -234,7 +234,7 @@ with tab_guide:
     """)
 
 # =====================================================================
-# TAB 3: IN-APP FEEDBACK FORM (WEB3FORMS)
+# TAB 3: IN-APP FEEDBACK FORM (WEB3FORMS - WITH HEADERS FIX)
 # =====================================================================
 with tab_feedback:
     st.header("💬 Help Shape the Next Version")
@@ -282,20 +282,34 @@ with tab_feedback:
             payload = {
                 "access_key": WEB3FORMS_ACCESS_KEY,
                 "subject": f"Cashflow App Feedback - Rating: {ease_of_use}",
+                "from_name": "Cashflow Streamlit App",
                 "Ease of Use": ease_of_use,
                 "Tested What-If Scenario": tested_scenario,
                 "Forward Visibility vs Bank": forward_visibility,
                 "Willingness to Pay (£3-5/mo)": wtp,
-                "Main Friction Point": friction,
-                "Feature Request": feature,
+                "Main Friction Point": friction if friction else "None provided",
+                "Feature Request": feature if feature else "None provided",
                 "Tester Email": email if email else "Anonymous"
             }
             
+            headers = {
+                "Accept": "application/json"
+            }
+            
             try:
-                response = requests.post("https://api.web3forms.com/submit", json=payload)
-                if response.status_code == 200:
-                    st.success("🎉 Thank you! Your feedback has been sent directly to my inbox.")
+                # Using form-encoded POST request with explicit Accept headers for maximum Web3Forms compatibility
+                response = requests.post(
+                    "https://api.web3forms.com/submit", 
+                    data=payload, 
+                    headers=headers
+                )
+                
+                res_data = response.json()
+                
+                if response.status_code == 200 and res_data.get("success"):
+                    st.success("🎉 Thank you! Your feedback has been submitted successfully.")
                 else:
-                    st.error("Failed to submit feedback. Please check your internet connection or try again.")
+                    error_msg = res_data.get("message", "Unknown submission error")
+                    st.error(f"Failed to submit: {error_msg}")
             except Exception as e:
                 st.error(f"Error submitting form: {e}")
