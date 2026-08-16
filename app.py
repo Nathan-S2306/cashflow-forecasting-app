@@ -1,3 +1,4 @@
+import json
 import requests
 import pandas as pd
 import numpy as np
@@ -82,6 +83,34 @@ else:
         if col_del.button("❌", key=f"del_{idx}"):
             st.session_state.rules.pop(idx)
             st.rerun()
+
+# --- SAVE / LOAD RULE CONFIGURATIONS (JSON) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("💾 Backup / Restore Rules")
+
+# Export JSON
+rules_json = json.dumps(st.session_state.rules, indent=2)
+st.sidebar.download_button(
+    label="📥 Export Rules (JSON)",
+    data=rules_json,
+    file_name="cashflow_rules.json",
+    mime="application/json",
+    use_container_width=True
+)
+
+# Import JSON
+uploaded_rules_file = st.sidebar.file_uploader("📤 Import Rules (JSON)", type=["json"], label_visibility="collapsed")
+if uploaded_rules_file is not None:
+    try:
+        imported_rules = json.load(uploaded_rules_file)
+        if isinstance(imported_rules, list):
+            st.session_state.rules = imported_rules
+            st.sidebar.success("Rules imported successfully!")
+            st.rerun()
+        else:
+            st.sidebar.error("Invalid JSON format.")
+    except Exception as e:
+        st.sidebar.error(f"Failed to load JSON: {e}")
 
 # =====================================================================
 # MAIN TAB NAVIGATION
@@ -184,11 +213,27 @@ with tab_dashboard:
     else:
         st.line_chart(df.set_index('date')[['Baseline Balance']])
 
-    # --- DATA TABLE BREAKDOWN ---
-    st.subheader("Detailed Day-by-Day Projections")
+    # --- DATA TABLE BREAKDOWN & DOWNLOAD ---
+    st.markdown("---")
+    col_tbl_title, col_tbl_dl = st.columns([3, 1])
+    col_tbl_title.subheader("Detailed Day-by-Day Projections")
+    
     display_cols = ['date', 'income', 'bills', 'variable_spend', 'Baseline Balance']
     if enable_scenario:
         display_cols.append('Simulated Balance')
+
+    # Prepare downloadable CSV data
+    export_df = df[display_cols].copy()
+    export_df['date'] = export_df['date'].dt.strftime('%Y-%m-%d')
+    csv_data = export_df.to_csv(index=False).encode('utf-8')
+
+    col_tbl_dl.download_button(
+        label="📥 Export Projection (CSV)",
+        data=csv_data,
+        file_name="cashflow_forecast.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 
     st.dataframe(
         df[display_cols].style.format({
