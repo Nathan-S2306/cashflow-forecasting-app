@@ -4,10 +4,57 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-# Set Streamlit Page Configuration
-st.set_page_config(page_title="Budget Forecasting Tool", layout="wide")
+# =====================================================================
+# 1. PAGE CONFIGURATION & META TAGS (STEP 3)
+# =====================================================================
+st.set_page_config(
+    page_title="Budget Forecasting Tool",
+    page_icon="💸",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Injected Meta Description / Open Graph Preview Tag
+st.markdown("""
+    <head>
+        <meta name="description" content="A forward-looking daily budget and cashflow forecasting engine to simulate what-if purchase scenarios and prevent overdraft surprises.">
+        <meta property="og:title" content="Budget Forecasting Tool">
+        <meta property="og:description" content="Forward-looking cashflow & scenario simulator engine built with Python and Streamlit.">
+    </head>
+""", unsafe_allow_html=True)
 
 st.title("💸 Budget Forecasting Tool")
+
+# =====================================================================
+# 2. FORECAST CALCULATION ENGINE (STEP 4 - HELPER FUNCTION)
+# =====================================================================
+def calculate_forecast(start_balance, forecast_days, daily_variable_spend, rules):
+    """
+    Core deterministic cashflow forecasting engine.
+    Handles month-end dates and daily roll-forward balances.
+    """
+    start_date = pd.Timestamp.today().normalize()
+    date_range = pd.date_range(start=start_date, periods=forecast_days, freq="D")
+
+    df = pd.DataFrame({'date': date_range})
+    df['income'] = 0.0
+    df['bills'] = 0.0
+    df['variable_spend'] = daily_variable_spend
+
+    for rule in rules:
+        target_day = rule['day']
+        # Handle end-of-month matching (e.g., day 31 on 30-day months)
+        mask = df['date'].apply(
+            lambda d: d.day == target_day or (target_day > d.days_in_month and d.is_month_end)
+        )
+        if rule['type'] == "Income":
+            df.loc[mask, 'income'] += rule['amount']
+        else:
+            df.loc[mask, 'bills'] += rule['amount']
+
+    df['net_flow'] = df['income'] - df['bills'] - df['variable_spend']
+    df['Baseline Balance'] = start_balance + df['net_flow'].cumsum()
+    return df
 
 # =====================================================================
 # SIDEBAR CONFIGURATION
@@ -125,49 +172,63 @@ tab_dashboard, tab_guide, tab_feedback = st.tabs([
 # TAB 1: MAIN FORECAST DASHBOARD
 # =====================================================================
 with tab_dashboard:
-    # --- CSV STATEMENT UPLOADER ---
+    # --- FLEXIBLE CSV STATEMENT UPLOADER ENGINE ---
     st.subheader("Import Historical Bank Statement (Optional)")
-    uploaded_file = st.file_uploader("Upload bank statement (CSV with 'Date' and 'Amount' columns)", type=["csv"])
+    uploaded_file = st.file_uploader("Upload bank statement (CSV)", type=["csv"])
 
     daily_discretionary_spend = 0.0
 
     if uploaded_file is not None:
         try:
             csv_df = pd.read_csv(uploaded_file)
-            csv_df.columns = csv_df.columns.str.strip().str.capitalize()
+            all_cols = list(csv_df.columns)
             
-            if 'Date' in csv_df.columns and 'Amount' in csv_df.columns:
-                csv_df['Date'] = pd.to_datetime(csv_df['Date'])
+            # Intelligently guess initial column matches
+            date_default = next((i for i, c in enumerate(all_cols) if 'date' in str(c).lower()), 0)
+            amount_default = next((i for i, c in enumerate(all_cols) if 'amount' in str(c).lower() or 'value' in str(c).lower()), min(1, len(all_cols) - 1))
+            
+            with st.expander("🛠️ Column Mapping Settings", expanded=True):
+                col_map1, col_map2 = st.columns(2)
+                selected_date_col = col_map1.selectbox("Select Date Column:", all_cols, index=date_default)
+                selected_amount_col = col_map2.selectbox("Select Transaction Amount Column:", all_cols, index=amount_default)
+            
+            # Process mapping
+            processed_df = csv_df[[selected_date_col, selected_amount_col]].copy()
+            processed_df.columns = ['Date', 'Amount']
+            
+            # Clean numeric and date data
+            processed_df['Amount'] = pd.to_numeric(processed_df['Amount'].astype(str).str.replace(r'[\£\,\$]', '', regex=True), errors='coerce')
+            processed_df['Date'] = pd.to_datetime(processed_df['Date'], errors='coerce')
+            processed_df = processed_df.dropna(subset=['Date', 'Amount'])
+            
+            if not processed_df.empty:
+                debits = processed_df[processed_df['Amount'] < 0]
+                credits = processed_df[processed_df['Amount'] > 0]
                 
-                debits = csv_df[csv_df['Amount'] < 0]
-                total_days = (csv_df['Date'].max() - csv_df['Date'].min()).days or 30
-                daily_discretionary_spend = abs(debits['Amount'].sum()) / total_days
+                total_days = (processed_df['Date'].max() - processed_df['Date'].min()).days or 30
+                daily_discretionary_spend = abs(debits['Amount'].sum()) / total_days if not debits.empty else 0.0
                 
-                st.info(f"📊 Estimated daily variable spend: **£{daily_discretionary_spend:.2f}/day** based on {total_days} days of statement history.")
+                st.success(f"📊 **Statement Parsed:** Calculated **£{daily_discretionary_spend:.2f}/day** estimated variable spend over {total_days} days of history.")
+                
+                with st.expander("🔎 View Statement Insights"):
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Date Range", f"{processed_df['Date'].min().strftime('%d %b %Y')} - {processed_df['Date'].max().strftime('%d %b %Y')}")
+                    m2.metric("Total Debits", f"£{abs(debits['Amount'].sum()):,.2f}")
+                    m3.metric("Total Credits", f"£{credits['Amount'].sum():,.2f}")
+                    m4.metric("Valid Transactions", f"{len(processed_df):,}")
             else:
-                st.warning("CSV must contain 'Date' and 'Amount' headers. Falling back to default rules.")
+                st.warning("Could not extract valid date and numeric amount values with selected mapping.")
+                
         except Exception as e:
-            st.error(f"Error parsing CSV: {e}")
+            st.error(f"Error parsing uploaded statement: {e}")
 
-    # --- FORECAST TIMELINE ENGINE ---
-    start_date = pd.Timestamp.today().normalize()
-    date_range = pd.date_range(start=start_date, periods=forecast_days, freq="D")
-
-    df = pd.DataFrame({'date': date_range})
-    df['income'] = 0.0
-    df['bills'] = 0.0
-    df['variable_spend'] = daily_discretionary_spend
-
-    # Apply recurring rules across the timeline
-    for rule in st.session_state.rules:
-        mask = df['date'].dt.day == rule['day']
-        if rule['type'] == "Income":
-            df.loc[mask, 'income'] += rule['amount']
-        else:
-            df.loc[mask, 'bills'] += rule['amount']
-
-    df['net_flow'] = df['income'] - df['bills'] - df['variable_spend']
-    df['Baseline Balance'] = start_balance + df['net_flow'].cumsum()
+    # --- RUN FORECAST TIMELINE ENGINE ---
+    df = calculate_forecast(
+        start_balance=start_balance,
+        forecast_days=forecast_days,
+        daily_variable_spend=daily_discretionary_spend,
+        rules=st.session_state.rules
+    )
 
     # --- WHAT-IF SCENARIO SIMULATOR ---
     st.markdown("---")
