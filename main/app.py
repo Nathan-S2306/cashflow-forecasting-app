@@ -2,20 +2,18 @@ import streamlit as st
 import sys
 import os
 
-# --- PATH FIX FOR MODULAR IMPORTS ---
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# --- PATH RESOLUTION FOR MAIN SUBFOLDER ---
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# --- IMPORT MODULES ---
+# --- MODULE IMPORTS ---
 try:
     from core.db import init_db
-    from views import (
-        tab_overview,
-        tab_scenarios,
-        tab_payoff,
-        tab_categories,
-        tab_feedback,
-        tab_knowledge
-    )
+    import views.tab_overview as tab_overview
+    import views.tab_scenarios as tab_scenarios
+    import views.tab_payoff as tab_payoff
+    import views.tab_categories as tab_categories
+    import views.tab_feedback as tab_feedback
+    import views.tab_knowledge as tab_knowledge
 except Exception as e:
     st.error(f"CRITICAL MODULE IMPORT ERROR: {e}")
     import traceback
@@ -30,56 +28,59 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-def render_view_module(module):
-    """Dynamically finds and executes whatever entry function the view file uses."""
-    for fn_name in ["show", "display", "render", "main", "render_tab", "run"]:
-        if hasattr(module, fn_name):
-            getattr(module, fn_name)()
+def execute_tab(module, primary_func_name):
+    """Safely executes the tab function (e.g., render_overview_tab) or falls back to generic entry points."""
+    possible_funcs = [
+        primary_func_name,
+        f"render_{module.__name__.split('.')[-1]}",
+        "show",
+        "render",
+        "display",
+        "main",
+        "run"
+    ]
+    for func_name in possible_funcs:
+        if hasattr(module, func_name):
+            getattr(module, func_name)()
             return
-    st.error(f"Could not find a valid execution function (like show() or render()) in module: {module.__name__}")
+    st.error(f"Could not locate an execution function in module {module.__name__}.")
 
 def main():
+    # Database setup
     try:
         init_db()
     except Exception as db_err:
         st.warning(f"Database initialization notice: {db_err}")
 
-    # --- SIDEBAR NAVIGATION ---
-    st.sidebar.title("Navigation & Controls")
-    
-    app_mode = st.sidebar.radio(
-        "Select View",
-        [
-            "Overview Dashboard", 
-            "Scenario Planning", 
-            "Debt Payoff Strategy", 
-            "Categories & Budgets", 
-            "Feedback & Insights",
-            "Knowledge Base"
-        ]
-    )
+    st.title("📈 Cashflow Forecasting & Financial Engine")
 
-    st.sidebar.divider()
-    st.sidebar.caption("Cashflow Forecasting Engine v1.0")
+    # --- TOP TAB NAVIGATION LAYOUT ---
+    t_overview, t_scenarios, t_payoff, t_categories, t_feedback, t_knowledge = st.tabs([
+        "📊 Overview Dashboard",
+        "🔮 Scenario Planning",
+        "💳 Debt Payoff Strategy",
+        "🏷️ Categories & Budgets",
+        "💬 Feedback & Insights",
+        "📚 Knowledge Base"
+    ])
 
-    # --- ROUTING ---
-    if app_mode == "Overview Dashboard":
-        render_view_module(tab_overview)
-        
-    elif app_mode == "Scenario Planning":
-        render_view_module(tab_scenarios)
+    with t_overview:
+        execute_tab(tab_overview, "render_overview_tab")
 
-    elif app_mode == "Debt Payoff Strategy":
-        render_view_module(tab_payoff)
+    with t_scenarios:
+        execute_tab(tab_scenarios, "render_scenarios_tab")
 
-    elif app_mode == "Categories & Budgets":
-        render_view_module(tab_categories)
+    with t_payoff:
+        execute_tab(tab_payoff, "render_payoff_tab")
 
-    elif app_mode == "Feedback & Insights":
-        render_view_module(tab_feedback)
+    with t_categories:
+        execute_tab(tab_categories, "render_categories_tab")
 
-    elif app_mode == "Knowledge Base":
-        render_view_module(tab_knowledge)
+    with t_feedback:
+        execute_tab(tab_feedback, "render_feedback_tab")
+
+    with t_knowledge:
+        execute_tab(tab_knowledge, "render_knowledge_tab")
 
 if __name__ == "__main__":
     try:
