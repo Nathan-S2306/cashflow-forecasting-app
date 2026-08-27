@@ -3,10 +3,9 @@ import sys
 import os
 
 # --- PATH FIX FOR MODULAR IMPORTS ---
-# Ensures Python can locate your core/ and views/ directories from inside the main/ folder
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# --- IMPORT DATABASE & VIEW MODULES ---
+# --- IMPORT MODULES ---
 try:
     from core.db import init_db
     from views import (
@@ -31,14 +30,21 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+def render_view_module(module):
+    """Dynamically finds and executes whatever entry function the view file uses."""
+    for fn_name in ["show", "display", "render", "main", "render_tab", "run"]:
+        if hasattr(module, fn_name):
+            getattr(module, fn_name)()
+            return
+    st.error(f"Could not find a valid execution function (like show() or render()) in module: {module.__name__}")
+
 def main():
-    # Initialize database on startup
     try:
         init_db()
     except Exception as db_err:
         st.warning(f"Database initialization notice: {db_err}")
 
-    # --- SIDEBAR NAVIGATION & CONTROLS ---
+    # --- SIDEBAR NAVIGATION ---
     st.sidebar.title("Navigation & Controls")
     
     app_mode = st.sidebar.radio(
@@ -56,24 +62,24 @@ def main():
     st.sidebar.divider()
     st.sidebar.caption("Cashflow Forecasting Engine v1.0")
 
-    # --- MAIN VIEW ROUTING ---
+    # --- ROUTING ---
     if app_mode == "Overview Dashboard":
-        tab_overview.render()
+        render_view_module(tab_overview)
         
     elif app_mode == "Scenario Planning":
-        tab_scenarios.render()
+        render_view_module(tab_scenarios)
 
     elif app_mode == "Debt Payoff Strategy":
-        tab_payoff.render()
+        render_view_module(tab_payoff)
 
     elif app_mode == "Categories & Budgets":
-        tab_categories.render()
+        render_view_module(tab_categories)
 
     elif app_mode == "Feedback & Insights":
-        tab_feedback.render()
+        render_view_module(tab_feedback)
 
     elif app_mode == "Knowledge Base":
-        tab_knowledge.render()
+        render_view_module(tab_knowledge)
 
 if __name__ == "__main__":
     try:
