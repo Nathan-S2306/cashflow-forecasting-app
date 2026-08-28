@@ -91,7 +91,7 @@ def render_categories_tab():
         if uploaded_file is not None:
             try:
                 df = pd.read_csv(uploaded_file)
-                st.success(f"Successfully loaded {len(df)} transactions.")
+                st.success(f"Successfully loaded {len(df)} transactions from file.")
                 st.dataframe(df.head(10), use_container_width=True)
 
                 col1, col2 = st.columns(2)
@@ -102,8 +102,80 @@ def render_categories_tab():
                     desc_col = st.selectbox("Select Description Column", df.columns, key="csv_desc_col")
                     cat_col = st.selectbox("Select Category Column (Optional)", ["None"] + list(df.columns), key="csv_cat_col")
 
-                if st.button("Process & Categorize Import", key="btn_proc_csv"):
-                    st.info("Transactions imported and categorized successfully!")
+                if st.button("Process & Categorize Import", type="primary", key="btn_proc_csv"):
+                    count_inc = 0
+                    count_exp = 0
+
+                    for _, row in df.iterrows():
+                        desc = str(row[desc_col]).strip() if pd.notna(row[desc_col]) else "Imported Item"
+                        
+                        # Parse numeric amount
+                        try:
+                            amt_str = str(row[amount_col]).replace("£", "").replace("$", "").replace(",", "").strip()
+                            amt = float(amt_str)
+                        except (ValueError, TypeError):
+                            continue
+
+                        # Extract day of month or default to 1
+                        try:
+                            tx_date = pd.to_datetime(row[date_col])
+                            day_num = int(tx_date.day)
+                            anchor_str = tx_date.strftime("%Y-%m-%d")
+                        except Exception:
+                            day_num = 1
+                            anchor_str = date.today().strftime("%Y-%m-%d")
+
+                        # Resolve category
+                        raw_cat = str(row[cat_col]).strip() if cat_col != "None" and pd.notna(row[cat_col]) else ""
+                        category = raw_cat if raw_cat in BILL_CATEGORIES else "Discretionary"
+
+                        # Positive amounts = Income
+                        if amt > 0:
+                            rule_data = {
+                                "name": desc,
+                                "amount": amt,
+                                "freq": "Monthly",
+                                "day": day_num,
+                                "anchor_date": anchor_str,
+                                "shift_weekend": False,
+                            }
+                            if HAS_DB:
+                                try:
+                                    if save_income_rule:
+                                        save_income_rule(rule_data)
+                                    else:
+                                        add_income_rule(desc, amt, day_num)
+                                except Exception:
+                                    pass
+                            st.session_state["income_rules"].append(rule_data)
+                            count_inc += 1
+
+                        # Negative amounts = Bills / Expenses
+                        elif amt < 0:
+                            abs_amt = abs(amt)
+                            rule_data = {
+                                "name": desc,
+                                "category": category,
+                                "amount": abs_amt,
+                                "freq": "Monthly",
+                                "day": day_num,
+                                "anchor_date": anchor_str,
+                                "shift_weekend": False,
+                            }
+                            if HAS_DB:
+                                try:
+                                    if save_expense_rule:
+                                        save_expense_rule(rule_data)
+                                    else:
+                                        add_expense_rule(desc, abs_amt, day_num, category=category)
+                                except Exception:
+                                    pass
+                            st.session_state["expense_rules"].append(rule_data)
+                            count_exp += 1
+
+                    st.success(f"Import complete! Added {count_inc} income sources and {count_exp} bill rules.")
+                    st.rerun()
+
             except Exception as ex:
                 st.error(f"Error processing CSV: {ex}")
 
