@@ -12,7 +12,6 @@ try:
         load_expense_rules,
         load_income_rules,
     )
-    # Check for alternate function naming if present
     try:
         from core.db import save_expense_rule, save_income_rule
     except ImportError:
@@ -24,9 +23,9 @@ except ImportError:
     HAS_DB = False
 
 
-STEP_CHANGE_CATEGORIES = [
+BILL_CATEGORIES = [
     "Fixed Essential",
-    "Step-Change / Discretionary",
+    "Discretionary",
     "Debt & Commitments",
     "Savings & Investments",
 ]
@@ -52,7 +51,6 @@ def load_rules():
         try:
             db_inc = load_income_rules()
             if db_inc:
-                # Format tuples into rule dictionaries if needed
                 st.session_state["income_rules"] = [
                     {
                         "id": inc[0],
@@ -82,8 +80,8 @@ def load_rules():
 
 
 def render_categories_tab():
-    st.header("🏷️ Data Entry: Income & Step-Change Bills")
-    st.caption("Manage recurring income streams, step-change bill rules, and import bank statements.")
+    st.header("🏷️ Data Entry: Income & Recurring Bills")
+    st.caption("Manage recurring income streams, bill rules, and import bank statements.")
 
     load_rules()
 
@@ -163,7 +161,7 @@ def render_categories_tab():
     with col_bills:
         st.subheader("💸 Add Recurring Bill")
         bill_name = st.text_input("Bill Name", placeholder="e.g. Rent, Broadband, Car Finance", key="bill_name_input")
-        bill_category = st.selectbox("Step-Change Category", STEP_CHANGE_CATEGORIES, key="bill_cat_input")
+        bill_category = st.selectbox("Category", BILL_CATEGORIES, key="bill_cat_input")
         bill_amt = st.number_input("Amount (£)", min_value=0.0, step=10.0, key="bill_amt_input")
         bill_freq = st.selectbox("Bill Cadence", CADENCE_OPTIONS, key="bill_freq_input")
 
@@ -222,7 +220,6 @@ def render_categories_tab():
             cols = [c for c in ["name", "amount", "freq", "day", "anchor_date"] if c in df_inc.columns]
             st.dataframe(df_inc[cols], use_container_width=True, hide_index=True)
             
-            # Delete actions
             for idx, item in enumerate(inc_list):
                 c_a, c_b = st.columns([4, 1])
                 c_a.caption(f"**{item.get('name')}**: £{item.get('amount', 0):,.2f} ({item.get('freq', 'Monthly')})")
@@ -245,7 +242,6 @@ def render_categories_tab():
             cols = [c for c in ["name", "category", "amount", "freq", "day", "anchor_date"] if c in df_exp.columns]
             st.dataframe(df_exp[cols], use_container_width=True, hide_index=True)
             
-            # Delete actions
             for idx, item in enumerate(exp_list):
                 c_a, c_b = st.columns([4, 1])
                 c_a.caption(f"**{item.get('name')}**: £{item.get('amount', 0):,.2f} [{item.get('category', 'Fixed Essential')}]")

@@ -15,9 +15,9 @@ from core.db import (
     load_planned_purchases,
 )
 
-STEP_CHANGE_CATEGORIES = [
+BILL_CATEGORIES = [
     "Fixed Essential",
-    "Step-Change / Discretionary",
+    "Discretionary",
     "Debt & Commitments",
     "Savings & Investments",
 ]
@@ -111,7 +111,6 @@ def render_overview_tab():
         line=dict(color="#1f77b4", width=2.5)
     ))
 
-    # Soft red warning region below cushion threshold
     fig.add_hrect(
         y0=0, y1=cushion_limit,
         fillcolor="rgba(255, 0, 0, 0.12)", line_width=0,
@@ -133,9 +132,9 @@ def render_overview_tab():
 
     col_left, col_right = st.columns(2)
 
-    # LEFT COLUMN: Bills by Step-Change Category
+    # LEFT COLUMN: Bills by Category
     with col_left:
-        st.markdown("### 💸 Regular Bills (by Step-Change Category)")
+        st.markdown("### 💸 Regular Bills (by Category)")
 
         if expenses:
             exp_records = []
@@ -155,7 +154,7 @@ def render_overview_tab():
                 df_exp.groupby("Category")["Amount (£)"]
                 .agg(["sum", "count"])
                 .reset_index()
-                .rename(columns={"Category": "Step-Change Category", "sum": "Total (£)", "count": "Items"})
+                .rename(columns={"Category": "Category", "sum": "Total (£)", "count": "Items"})
             )
             st.dataframe(cat_summary, use_container_width=True, hide_index=True)
 
@@ -174,7 +173,7 @@ def render_overview_tab():
             e_name = st.text_input("Bill Name", key="add_exp_name")
             e_amt = st.number_input("Amount (£)", min_value=0.0, step=10.0, key="add_exp_amt")
             e_day = st.number_input("Day of Month (1-31)", min_value=1, max_value=31, value=1, key="add_exp_day")
-            e_cat = st.selectbox("Step-Change Category", STEP_CHANGE_CATEGORIES, key="add_exp_cat")
+            e_cat = st.selectbox("Category", BILL_CATEGORIES, key="add_exp_cat")
             if st.button("Save Bill", key="btn_save_exp"):
                 if e_name and e_amt > 0:
                     add_expense_rule(e_name, e_amt, e_day, category=e_cat)
@@ -221,7 +220,7 @@ def render_overview_tab():
             p_name = st.text_input("Item Name", key="add_pur_name")
             p_amt = st.number_input("Amount (£)", min_value=0.0, step=10.0, key="add_pur_amt")
             p_date = st.date_input("Target Date", key="add_pur_date").strftime("%Y-%m-%d")
-            p_cat = st.selectbox("Category", STEP_CHANGE_CATEGORIES, key="add_pur_cat")
+            p_cat = st.selectbox("Category", BILL_CATEGORIES, key="add_pur_cat")
             if st.button("Save Purchase", key="btn_save_pur"):
                 if p_name and p_amt > 0:
                     add_planned_purchase(p_name, p_amt, p_date, category=p_cat)
