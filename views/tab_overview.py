@@ -2,6 +2,7 @@ from datetime import datetime
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
 from core.db import (
     add_expense_rule,
     add_income_rule,
@@ -13,6 +14,13 @@ from core.db import (
     load_income_rules,
     load_planned_purchases,
 )
+
+STEP_CHANGE_CATEGORIES = [
+    "Fixed Essential",
+    "Step-Change / Discretionary",
+    "Debt & Commitments",
+    "Savings & Investments",
+]
 
 
 def calculate_cashflow_timeline(start_balance: float, days: int = 90) -> pd.DataFrame:
@@ -57,8 +65,9 @@ def aggregate_timeline_data(df: pd.DataFrame, view_mode: str) -> pd.DataFrame:
 
 
 def render_overview_tab():
-    st.header("📊 Cashflow & Money Summary")
+    st.header("📊 Cashflow & Financial Overview")
 
+    # --- SECTION 1: CONTROLS & METRICS ---
     col_s1, col_s2 = st.columns([1, 3])
     with col_s1:
         start_balance = st.number_input("Current Starting Balance (£)", value=1500.0, step=50.0, key="ov_start_bal")
@@ -83,6 +92,8 @@ def render_overview_tab():
             st.success(f"✅ Forecast stays safely above your £{cushion_limit:,.2f} cushion.")
 
     st.markdown("---")
+
+    # --- SECTION 2: PLOTLY CASHFLOW CHART ---
     col_v1, col_v2 = st.columns([3, 1])
     with col_v1:
         st.subheader("Account Balance Projection")
@@ -112,18 +123,76 @@ def render_overview_tab():
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
+
+    # --- SECTION 3: SIDE-BY-SIDE CATEGORY BREAKDOWN & MANAGEMENT ---
     st.subheader("⚙️ Manage Monthly Income, Bills & One-Off Spends")
 
-    col_inc, col_exp, col_pur = st.columns(3)
+    incomes = load_income_rules()
+    expenses = load_expense_rules()
+    purchases = load_planned_purchases()
 
-    with col_inc:
+    col_left, col_right = st.columns(2)
+
+    # LEFT COLUMN: Bills by Step-Change Category
+    with col_left:
+        st.markdown("### 💸 Regular Bills (by Step-Change Category)")
+
+        if expenses:
+            exp_records = []
+            for exp in expenses:
+                cat_label = exp[5] if len(exp) > 5 else "Fixed Essential"
+                exp_records.append({
+                    "ID": exp[0],
+                    "Name": exp[1],
+                    "Amount (£)": exp[2],
+                    "Day": exp[3],
+                    "Category": cat_label
+                })
+            df_exp = pd.DataFrame(exp_records)
+
+            st.markdown("**Summary by Category**")
+            cat_summary = (
+                df_exp.groupby("Category")["Amount (£)"]
+                .agg(["sum", "count"])
+                .reset_index()
+                .rename(columns={"Category": "Step-Change Category", "sum": "Total (£)", "count": "Items"})
+            )
+            st.dataframe(cat_summary, use_container_width=True, hide_index=True)
+
+            st.markdown("**Itemized Bills**")
+            for exp in expenses:
+                c_a, c_b = st.columns([3, 1])
+                cat_label = exp[5] if len(exp) > 5 else "Fixed Essential"
+                c_a.write(f"**{exp[1]}**: £{exp[2]:,.2f} (Day {exp[3]}) `[{cat_label}]`")
+                if c_b.button("❌", key=f"del_exp_{exp[0]}"):
+                    delete_expense_rule(exp[0])
+                    st.rerun()
+        else:
+            st.info("No regular bills configured.")
+
+        with st.expander("➕ Add Regular Bill"):
+            e_name = st.text_input("Bill Name", key="add_exp_name")
+            e_amt = st.number_input("Amount (£)", min_value=0.0, step=10.0, key="add_exp_amt")
+            e_day = st.number_input("Day of Month (1-31)", min_value=1, max_value=31, value=1, key="add_exp_day")
+            e_cat = st.selectbox("Step-Change Category", STEP_CHANGE_CATEGORIES, key="add_exp_cat")
+            if st.button("Save Bill", key="btn_save_exp"):
+                if e_name and e_amt > 0:
+                    add_expense_rule(e_name, e_amt, e_day, category=e_cat)
+                    st.success("Bill added!")
+                    st.rerun()
+
+    # RIGHT COLUMN: Income & One-Off Spends
+    with col_right:
         st.markdown("### 💵 Money In (Income)")
-        for inc in load_income_rules():
-            c_a, c_b = st.columns([3, 1])
-            c_a.write(f"**{inc[1]}**: £{inc[2]:,.2f} (Day {inc[3]})")
-            if c_b.button("❌", key=f"del_inc_{inc[0]}"):
-                delete_income_rule(inc[0])
-                st.rerun()
+        if incomes:
+            for inc in incomes:
+                c_a, c_b = st.columns([3, 1])
+                c_a.write(f"**{inc[1]}**: £{inc[2]:,.2f} (Day {inc[3]})")
+                if c_b.button("❌", key=f"del_inc_{inc[0]}"):
+                    delete_income_rule(inc[0])
+                    st.rerun()
+        else:
+            st.info("No income rules configured.")
 
         with st.expander("➕ Add Income"):
             i_name = st.text_input("Source Name", key="add_inc_name")
@@ -135,41 +204,24 @@ def render_overview_tab():
                     st.success("Income added!")
                     st.rerun()
 
-    with col_exp:
-        st.markdown("### 💸 Regular Bills")
-        for exp in load_expense_rules():
-            c_a, c_b = st.columns([3, 1])
-            cat_label = exp[5] if len(exp) > 5 else "General"
-            c_a.write(f"**{exp[1]}**: £{exp[2]:,.2f} (Day {exp[3]}) [{cat_label}]")
-            if c_b.button("❌", key=f"del_exp_{exp[0]}"):
-                delete_expense_rule(exp[0])
-                st.rerun()
-
-        with st.expander("➕ Add Bill"):
-            e_name = st.text_input("Bill Name", key="add_exp_name")
-            e_amt = st.number_input("Amount (£)", min_value=0.0, step=10.0, key="add_exp_amt")
-            e_day = st.number_input("Day of Month (1-31)", min_value=1, max_value=31, value=1, key="add_exp_day")
-            e_cat = st.selectbox("Category", ["Housing", "Bills", "Living Expenses", "Fun", "General"], key="add_exp_cat")
-            if st.button("Save Bill", key="btn_save_exp"):
-                if e_name and e_amt > 0:
-                    add_expense_rule(e_name, e_amt, e_day, category=e_cat)
-                    st.success("Bill added!")
-                    st.rerun()
-
-    with col_pur:
+        st.markdown("---")
         st.markdown("### 🛍️ One-Off Spends")
-        for pur in load_planned_purchases():
-            c_a, c_b = st.columns([3, 1])
-            c_a.write(f"**{pur[1]}**: £{pur[2]:,.2f} on {pur[3]}")
-            if c_b.button("❌", key=f"del_pur_{pur[0]}"):
-                delete_planned_purchase(pur[0])
-                st.rerun()
+        if purchases:
+            for pur in purchases:
+                c_a, c_b = st.columns([3, 1])
+                cat_label = pur[4] if len(pur) > 4 else "Fixed Essential"
+                c_a.write(f"**{pur[1]}**: £{pur[2]:,.2f} on {pur[3]} `[{cat_label}]`")
+                if c_b.button("❌", key=f"del_pur_{pur[0]}"):
+                    delete_planned_purchase(pur[0])
+                    st.rerun()
+        else:
+            st.info("No one-off spends configured.")
 
         with st.expander("➕ Add One-Off Spend"):
             p_name = st.text_input("Item Name", key="add_pur_name")
             p_amt = st.number_input("Amount (£)", min_value=0.0, step=10.0, key="add_pur_amt")
             p_date = st.date_input("Target Date", key="add_pur_date").strftime("%Y-%m-%d")
-            p_cat = st.selectbox("Category", ["Housing", "Bills", "Living Expenses", "Fun", "General"], key="add_pur_cat")
+            p_cat = st.selectbox("Category", STEP_CHANGE_CATEGORIES, key="add_pur_cat")
             if st.button("Save Purchase", key="btn_save_pur"):
                 if p_name and p_amt > 0:
                     add_planned_purchase(p_name, p_amt, p_date, category=p_cat)
