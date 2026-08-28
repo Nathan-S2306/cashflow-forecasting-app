@@ -19,15 +19,29 @@ def render_scenarios_tab():
             base_bal = st.number_input("Base Starting Balance (£)", value=1500.0, step=50.0, key="sc_base_bal")
             salary_mod = st.slider("Income Adjustment (%)", -30, 30, 0, step=5, key="sc_sal_mod")
             bill_mod = st.slider("Bill Inflation (%)", 0, 30, 0, step=1, key="sc_bill_mod")
+            
+            # --- RECURRING BILL SIMULATION CONTROLS ---
+            rec_bill_cost = st.number_input("Simulated Recurring Bill (£)", value=0.0, step=10.0, key="sc_rec_bill")
+            rec_bill_freq = st.selectbox("Bill Cadence", ["Monthly (Every 30 Days)", "Weekly (Every 7 Days)"], key="sc_rec_freq")
+            
             one_off_cost = st.number_input("Unexpected One-Off Cost (£)", value=0.0, step=50.0, key="sc_one_off")
 
         with col_chart:
             df_base = calculate_cashflow_timeline(base_bal, days=90)
             df_sim = df_base.copy()
 
+            # Apply income and bill modifications
             df_sim["Net_Change"] = df_sim["Net_Change"].apply(
                 lambda x: x * (1 + salary_mod / 100.0) if x > 0 else x * (1 + bill_mod / 100.0)
             )
+
+            # Apply simulated recurring bill across the 90-day timeline
+            if rec_bill_cost > 0:
+                interval = 30 if "Monthly" in rec_bill_freq else 7
+                bill_days = [i for i in range(interval, len(df_sim), interval)]
+                df_sim.loc[bill_days, "Net_Change"] -= rec_bill_cost
+
+            # Apply unexpected one-off cost on day 15
             if one_off_cost > 0 and len(df_sim) > 15:
                 df_sim.loc[15, "Net_Change"] -= one_off_cost
 

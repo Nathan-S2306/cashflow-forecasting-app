@@ -14,6 +14,16 @@ try:
     import views.tab_categories as tab_categories
     import views.tab_feedback as tab_feedback
     import views.tab_knowledge as tab_knowledge
+
+    # Safe import for CSV / Bank Statement Importer tab
+    try:
+        import views.tab_import as tab_csv
+    except ImportError:
+        try:
+            import views.tab_csv as tab_csv
+        except ImportError:
+            tab_csv = None
+
 except Exception as e:
     st.error(f"CRITICAL MODULE IMPORT ERROR: {e}")
     import traceback
@@ -29,10 +39,16 @@ st.set_page_config(
 )
 
 def execute_tab(module, primary_func_name):
-    """Safely executes the tab function (e.g., render_overview_tab) or falls back to generic entry points."""
+    """Safely executes the tab function or falls back to generic entry points."""
+    if module is None:
+        st.warning("Importer module not found in views/ directory.")
+        return
+
     possible_funcs = [
         primary_func_name,
         f"render_{module.__name__.split('.')[-1]}",
+        "render_import_tab",
+        "render_csv_tab",
         "show",
         "render",
         "display",
@@ -55,8 +71,9 @@ def main():
     st.title("📈 Cashflow Forecasting & Financial Engine")
 
     # --- TOP TAB NAVIGATION LAYOUT ---
-    t_overview, t_scenarios, t_payoff, t_categories, t_feedback, t_knowledge = st.tabs([
+    t_overview, t_csv, t_scenarios, t_payoff, t_categories, t_feedback, t_knowledge = st.tabs([
         "📊 Overview Dashboard",
+        "📥 CSV Importer & Categorizer",
         "🔮 Scenario Planning",
         "💳 Debt Payoff Strategy",
         "🏷️ Categories & Budgets",
@@ -66,6 +83,9 @@ def main():
 
     with t_overview:
         execute_tab(tab_overview, "render_overview_tab")
+
+    with t_csv:
+        execute_tab(tab_csv, "render_import_tab")
 
     with t_scenarios:
         execute_tab(tab_scenarios, "render_scenarios_tab")
